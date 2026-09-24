@@ -531,22 +531,28 @@ function renderGame(){
  const br=document.getElementById('badgeRow');if(br){const all=[['🌱 First 10',d.answered>=10],['📚 100 Questions',d.answered>=100],['🎯 Sharp Mind',d.correct>=50],['🔥 7-Day Streak',d.streak>=7],['👑 XP Master',d.xp>=1000],['🏆 Quiz Pro',d.quizzes>=10]];br.innerHTML=all.map(x=>`<span class="achievement ${x[1]?'':'locked'}">${x[0]}${x[1]?' ✓':' 🔒'}</span>`).join('')}
 }
 function syncOnlineProfile(){
- const u=window.SARBA_ONLINE_AUTH&&window.SARBA_ONLINE_AUTH.user,db=window.SARBA_ONLINE_AUTH&&window.SARBA_ONLINE_AUTH.db;if(!u||!db)return;
- const d=gameState();db.collection('leaderboard').doc(u.uid).set({name:u.displayName||getUserName()||'Student',xp:d.xp,coins:d.coins,streak:d.streak,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true}).catch(()=>{});
+ const online=window.SARBA_ONLINE_AUTH||{},u=online.user,db=online.db;if(!u||!db)return;
+ const d=gameState();
+ db.collection('leaderboard').doc(u.uid).set({name:u.displayName||getUserName()||'Student',xp:d.xp,coins:d.coins,streak:d.streak,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})
+ .then(()=>loadLeaderboard())
+ .catch(e=>{console.warn('Leaderboard write failed',e);const el=document.getElementById('leaderboard');if(el&&e&&e.code==='permission-denied')el.innerHTML='<div class="sub">⚠️ You are signed in, but Firestore rules are blocking your leaderboard profile. Publish the rules and reload.</div>';});
 }
 async function loadLeaderboard(){
- const el=document.getElementById('leaderboard');if(!el)return;const db=window.SARBA_ONLINE_AUTH&&window.SARBA_ONLINE_AUTH.db;
- if(!db){el.innerHTML='<div class="sub">Connecting to Firebase Firestore… Local XP and badges still work offline.</div>';return}
+ const el=document.getElementById('leaderboard');if(!el)return;
+ const online=window.SARBA_ONLINE_AUTH||{};
+ const db=online.db, user=online.user;
+ if(!db){el.innerHTML='<div class="sub">Connecting to Firebase… Your local XP and badges work offline.</div>';return}
+ if(!user){el.innerHTML='<div class="sub">🔐 Sign in to see the online leaderboard. Your local XP and badges are saved on this device.</div>';return}
  try{
    const snap=await db.collection('leaderboard').orderBy('xp','desc').limit(10).get();
-   if(snap.empty){el.innerHTML='<div class="sub">Firebase connected. No online players have published XP yet.</div>';return}
+   if(snap.empty){el.innerHTML='<div class="sub">☁️ Online leaderboard is connected. Complete a quiz to publish your score.</div>';return}
    el.innerHTML=snap.docs.map((x,i)=>{const d=x.data();return `<div class="leaderRow"><span class="leaderRank">#${i+1}</span><span class="leaderName">${escapeHtml(d.name||'Student')}<small class="leaderXp"> • ${d.streak||0}🔥</small></span><b>${d.xp||0} XP</b></div>`}).join('');
  }catch(e){
    console.warn('Leaderboard read failed',e);
-   const code=e&&e.code||'';
+   const code=e&&e.code||'', msg=e&&e.message||'';
    el.innerHTML=code==='permission-denied'
-     ? '<div class="sub">Firebase is connected, but Firestore rules are blocking access. Publish the leaderboard rules, then refresh.</div>'
-     : '<div class="sub">Firebase is connected, but the leaderboard could not be read. Check Firestore Database and rules.</div>';
+     ? '<div class="sub">⚠️ Firestore permission denied. Publish the leaderboard rules in Firebase Console, then reload.</div>'
+     : `<div class="sub">⚠️ Firestore error${code?' ('+escapeHtml(code)+')':''}. ${escapeHtml(msg||'Check Firestore Database and rules.')}</div>`;
  }
 }
 function startModeQuiz(limit,count,label){const all=DATA.flatMap(s=>s.qs.map(q=>({...q,subject:s.name})));state.subject=label;state.qs=shuffle(all).slice(0,count);state.i=0;state.answers=Array(state.qs.length).fill(null);state.seconds=limit;state.hintUsed=false;begin()}
